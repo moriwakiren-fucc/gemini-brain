@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>📐 Geminiの脳みそを借りるサイト (理系数学版)</title>
+    
+    <!-- マークダウン解析用ライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- 数式(LaTeX)描画用ライブラリ(MathJax) -->
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --sidebar-bg: #f0f2f6;
+            --text-color: #31333f;
+            --border-color: #dcdcdc;
+            --primary-color: #ff4b4b;
+            --user-msg-bg: #e8f0fe;
+            --bot-msg-bg: #f9f9f9;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Meiryo, system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            display: flex;
+            height: 100dvh;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            overflow: hidden;
+        }
+
+        /* ----- サイドバー ----- */
+        .sidebar {
+            width: 330px;
+            background-color: var(--sidebar-bg);
+            padding: 100px 20px;
+            overflow-y: auto;
+            border-right: 1px solid var(--border-color);
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar h2 {
+            font-size: 1.1rem;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .flex-group {
+            display: flex;
+            gap: 5px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input[type="password"],
+        input[type="text"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 0.95rem;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            font-size: 0.9rem;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        details {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+
+        summary {
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid #ccc;
+            margin: 20px 0;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: white;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        button.primary {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+        }
+        
+        button.primary:hover {
+            background-color: #ff3333;
+            color: white;
+        }
+
+        .file-upload-wrapper {
+            border: 1px dashed var(--border-color);
+            padding: 10px;
+            border-radius: 5px;
+            background: white;
+            text-align: center;
+        }
+        
+        .file-upload-wrapper input[type="file"] {
+            display: block;
+            width: 100%;
+            font-size: 0.85rem;
+        }
+
+        .close-sidebar-btn {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            font-size: 2rem;
+            color: #666;
+            padding: 0;
+            width: auto;
+            line-height: 1;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        /* ----- メインコンテンツ ----- */
+        .main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100dvh;
+        }
+
+        .header {
+            flex-shrink: 0;
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+        }
+
+        .menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.8rem;
+            cursor: pointer;
+            margin-right: 15px;
+            padding: 0;
+            width: auto;
+            color: var(--text-color);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+
+        .header p {
+            margin: 5px 0 0;
+            color: #666;
+            font-size: 0.9rem;
+            width: 100%;
+        }
+
+        #status-area {
+            flex-shrink: 0;
+        }
+
+        /* チャット表示エリア */
+        .chat-container {
+            flex-grow: 1;
+            padding: 20px 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            display: flex;
+            gap: 15px;
+            max-width: 800px;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .user .avatar { background-color: #007bff; color: white; }
+        .assistant .avatar { background-color: #28a745; color: white; }
+
+        .message-content {
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1rem;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        .user .message-content {
+            background-color: var(--user-msg-bg);
+            border: 1px solid #d0e1fd;
+        }
+
+        .assistant .message-content {
+            background-color: var(--bot-msg-bg);
+            border: 1px solid var(--border-color);
+            width: 100%;
+        }
+
+        .message-content img.attached-image {
+            max-width: 400px;
+            width: 100%;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+        }
+
+        .info-box {
+            background-color: #e8f4fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 40px;
+            white-space: pre-line;
+        }
+
+        .error-box {
+            background-color: #fde8e8;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        /* ----- チャット入力エリア (常に下部に固定) ----- */
+        .chat-input-wrapper {
+            flex-shrink: 0;
+            padding: 20px 40px;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+            background-color: var(--bg-color);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .chat-input-form {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .chat-input-form textarea {
+            border-radius: 8px;
+            padding: 12px 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+            flex-grow: 1;
+            resize: none;
+            font-size: 1rem;
+            line-height: 1.5;
+            min-height: 48px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: inherit;
+        }
+
+        .send-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            margin-bottom: 5px;
+            cursor: pointer;
+            flex-shrink: 0;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .send-btn img {
+            width: 28px;
+            height: 28px;
+            transition: 0.2s;
+        }
+
+        .send-btn:not(:disabled):hover img {
+            transform: scale(1.1);
+        }
+
+        .send-btn:disabled img {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* ----- ローディングスピナー ----- */
+        .spinner {
+            border: 3px solid rgba(0,0,0,0.1);
+            border-radius: 50%;
+            border-top: 3px solid var(--primary-color);
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* =========================================
+           モバイル対応
+           ========================================= */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                height: 100dvh;
+                left: 0;
+                top: 0;
+                transform: translateX(-100%);
+                width: 280px;
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            .sidebar-overlay.open {
+                display: block;
+            }
+            .menu-btn { display: block; }
+            .close-sidebar-btn { display: block; }
+            .header, .chat-container, .chat-input-wrapper {
+                padding-left: 20px;
+                padding-right: 20px;
+            }
+            .info-box { margin: 20px; }
+            .header h1 { font-size: 1.4rem; }
+            .header p { font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- サイドバー -->
+    <div class="sidebar" id="sidebar">
+        <button class="close-sidebar-btn" id="close-sidebar-btn">&times;</button>
+        <h2>🔑 APIキーの設定</h2>
+        
+        <!-- APIキー入力部 -->
+        <div class="form-group flex-group">
+            <input type="password" id="api-key-input" placeholder="あなたのAPIキーを入力" style="flex-grow: 1; min-width: 0;">
+            <select id="api-key-dropdown" style="width: 100px; flex-shrink: 0;" title="保存されたAPIキーから選択">
+                <option value="">読込▼</option>
+            </select>
+        </div>
+        
+        <!-- APIキーを表示するチェックボックス -->
+        <div class="checkbox-group">
+            <input type="checkbox" id="show-key-checkbox">
+            <label for="show-key-checkbox" style="margin:0;">APIキーを表示</label>
+        </div>
+
+        <!-- APIキー保存ボタン -->
+        <div class="form-group">
+            <button type="button" id="save-key-btn">APIキーを保存</button>
+        </div>
+
+        <div class="form-group">
+            <label>Geminiのモデル名を選択</label>
+            <select id="model-select" title="上の選択肢ほど性能が良いですが、上の選択肢ほどすぐ使えなくなります。">
+                <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+                <option value="gemini-3.7-flash" selected>gemini-3.7-flash</option>
+                <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+                <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            </select>
+        </div>
+
+        <details>
+            <summary>🔰 APIキーの取得方法（無料）</summary>
+            <p><strong>「APIキー」</strong> とは、AIを使うための <strong>自分専用の合言葉（パスワード）</strong> のようなものです。<br>
+            Googleアカウントを持っていれば、以下の手順で<strong>誰でも無料で</strong>取得できます。</p>
+
+            <ol style="padding-left: 20px;">
+                <li><a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> にアクセスします。</li>
+                <li>お持ちの <strong>Googleアカウントでログイン</strong> します。<br>
+                （利用規約の画面が出たら、チェックを入れて「続行」を押してください）</li>
+                <li>画面の右上あたりにある青いボタン <strong>「APIキーを作成」</strong> をクリックします。</li>
+                <li>続いて上から2つ目の枠 <strong>「インポートしたプロジェクトを選択」</strong> → <strong>「新しいプロジェクト」</strong> の順にクリックします。</li>
+                <li>「プロジェクトの名前」を入力します。<code>Gemmath</code>などでよいと思います。入力後、「プロジェクトを作成」を押します。</li>
+                <li><strong>「キーを作成」</strong> を押してしばらく待つと <strong>「APIキー」</strong> という長い文字列が表示されます。</li>
+                <li>文字列の横にある <strong>コピーボタン</strong> を押してキーをコピーし、左側の入力欄に貼り付けてください。</li>
+            </ol>
+
+            <p style="font-size: 0.8rem; color: red;">⚠️ <strong>注意</strong>: このキーは自分専用のパスワードと同じです。他人に教えたり、SNSに公開したりしないようご注意ください。</p>
+        </details>
+
+        <hr>
+
+        <h2>📝 新しい問題を解く</h2>
+        <p style="font-size: 0.85rem;">テキスト入力、または画像のアップロードで問題を指定してください。</p>
+        
+        <form id="new-problem-form">
+            <div class="form-group file-upload-wrapper">
+                <label>📸 問題の画像（任意）</label>
+                <input type="file" id="problem-image" accept="image/png, image/jpeg, image/jpg">
+            </div>
+            <div class="form-group">
+                <label>✍️ 問題を手入力（または画像の補足）</label>
+                <textarea id="problem-text" rows="5" placeholder="例: 0<x<π/4におけるsin2x+cos4xの取りうる値の範囲を求めよ。&#10;画像の(2)だけを解説してください。"></textarea>
+            </div>
+            <button type="submit" class="primary">この問題を解説させる</button>
+        </form>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <div class="main">
+        <div class="header">
+            <button class="menu-btn" id="menu-btn">☰</button>
+            <div>
+                <h1>📐 Geminiの脳みそを借りるサイト (理系数学版)</h1>
+                <p>文系数学版は<a href="bunkei.html">こちら</a><br>数学以外（普通のGemini）は<a href="gemini_chat.html">こちら</a></p>
+            </div>
+        </div>
+
+        <div id="status-area">
+            <div class="info-box" id="initial-info">
+                👈 左側のサイドバーに、ご自身のGemini APIキーを入力してスタートしてください。
+                
+                ※取得方法は左側の「🔰 APIキーの取得方法（無料）」を開いて確認できます。
+            </div>
+        </div>
+
+        <div class="chat-container" id="chat-container" style="display: none;">
+            <!-- チャットメッセージ -->
+        </div>
+
+        <div class="chat-input-wrapper" id="chat-input-wrapper" style="display: none;">
+            <form id="chat-input-form" class="chat-input-form">
+                <textarea id="chat-input" rows="1" placeholder="この解説について質問や気になる点があれば入力してください...&#13;&#10;（Enterで改行）" disabled></textarea>
+                <button type="submit" id="chat-send-btn" class="send-btn" disabled title="送信">
+                    <!-- send.png を読み込む -->
+                    <img src="send.png" alt="送信">
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const SYSTEM_INSTRUCTION = `
+## 質問者の状況
+私は、高校数学の教科書内容を全て学習し終えた、難関大学への合格を目指す理系の高校3年生です。
+
+## 解答者の条件
+あなたは、数学が苦手な私を、大学合格へ導く数学の優秀な教育者です。
+
+## 行動
+問題が入力されたら、次の手順通りに教えてください。
+
+## 手順
+1. まず、入力された問題を読み取ってください。問題が複数ある場合は、1問ずつ分けた上で、以下手順を問題ごとに繰り返してください。
+2. 入力された問題を解くために必要な、教科書レベルの基礎知識を説明してください。
+3. 入力された問題を解く上での考え方を教えてください。
+4. 入力された問題の模範解答を、ステップに分けて作成してください。
+5. 別解があれば、それらを全て挙げてください。
+6. 本解・別解の全てについて、なぜその解法を選択したのか、その解法を選択する必然性を教えてください。その際、間違って選択してしまいがちな別の解法があれば、それを全て挙げて、それらはなぜ使用できないのか、どのような条件ならその解法を使用するかも解説してください。
+
+## 注意事項
+- 数式を出力する際は、必ずLaTeX形式（$ ... $ または $$ ... $$）を使用してください。
+- 三角関数は、sin, cos, tanのみを使用してください。sec, csc, cotなどは使用しないでください。
+- 計算は丁寧にしてください。計算ミスは許されません。
+- 記述解答を作る際、減点のない、完璧な答案を書いてください。
+- 「解法の必然性」は、別の問題を解くときに再現性があるように、丁寧に詳しく書いてください。
+`;
+
+        let chatHistory = []; 
+
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const menuBtn = document.getElementById('menu-btn');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKeyDropdown = document.getElementById('api-key-dropdown');
+        const showKeyCheckbox = document.getElementById('show-key-checkbox');
+        const saveKeyBtn = document.getElementById('save-key-btn');
+        
+        const modelSelect = document.getElementById('model-select');
+        const newProblemForm = document.getElementById('new-problem-form');
+        const problemImageInput = document.getElementById('problem-image');
+        const problemTextInput = document.getElementById('problem-text');
+        
+        const statusArea = document.getElementById('status-area');
+        const initialInfo = document.getElementById('initial-info');
+        const chatContainer = document.getElementById('chat-container');
+        const chatInputWrapper = document.getElementById('chat-input-wrapper');
+        const chatInputForm = document.getElementById('chat-input-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('open');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('open');
+        }
+        menuBtn.addEventListener('click', openSidebar);
+        closeSidebarBtn.addEventListener('click', closeSidebar);
+        sidebarOverlay.addEventListener('click', closeSidebar);
+
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+
+        // ----------------------------------------------------
+        // APIキー管理ロジック
+        // ----------------------------------------------------
+        window.onload = () => {
+            const oldKey = localStorage.getItem('gemini_api_key');
+            if (oldKey) {
+                saveApiKeyToLocal(oldKey);
+                localStorage.removeItem('gemini_api_key');
+            }
+
+            updateApiKeyDropdown();
+
+            const keys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
+            if (keys.length > 0) {
+                apiKeyInput.value = keys[keys.length - 1];
+                checkInitialState();
+            }
+        };
+
+        function saveApiKeyToLocal(keyToSave) {
+            if (!keyToSave) return;
+            let keys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
+            if (!keys.includes(keyToSave)) {
+                keys.push(keyToSave);
+                localStorage.setItem('gemini_api_keys', JSON.stringify(keys));
+                updateApiKeyDropdown();
+            }
+        }
+
+        function updateApiKeyDropdown() {
+            let keys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
+            apiKeyDropdown.innerHTML = '<option value="">読込▼</option>';
+            
+            keys.forEach(key => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = key.length > 8 ? '...' + key.slice(-8) : key;
+                apiKeyDropdown.appendChild(option);
+            });
+        }
+
+        saveKeyBtn.addEventListener('click', () => {
+            const currentKey = apiKeyInput.value.trim();
+            if (currentKey) {
+                saveApiKeyToLocal(currentKey);
+                const originalText = saveKeyBtn.innerText;
+                saveKeyBtn.innerText = "✓ 保存しました";
+                setTimeout(() => { saveKeyBtn.innerText = originalText; }, 2000);
+            }
+        });
+
+        apiKeyDropdown.addEventListener('change', () => {
+            if (apiKeyDropdown.value) {
+                apiKeyInput.value = apiKeyDropdown.value;
+                checkInitialState();
+                apiKeyDropdown.selectedIndex = 0; 
+            }
+        });
+
+        showKeyCheckbox.addEventListener('change', () => {
+            apiKeyInput.type = showKeyCheckbox.checked ? 'text' : 'password';
+        });
+
+        apiKeyInput.addEventListener('input', checkInitialState);
+
+        // ----------------------------------------------------
+        // UI状態管理
+        // ----------------------------------------------------
+        function checkInitialState() {
+            if (apiKeyInput.value.trim() === '') {
+                initialInfo.innerText = "👈 左側のサイドバーに、ご自身のGemini APIキーを入力してスタートしてください。\n\n※取得方法は左側の「🔰 APIキーの取得方法（無料）」を開いて確認できます。";
+                initialInfo.style.display = 'block';
+                chatContainer.style.display = 'none';
+                chatInputWrapper.style.display = 'none';
+            } else if (chatHistory.length === 0) {
+                initialInfo.innerText = "👈 左側のサイドバーから数学の問題を入力、またはアップロードしてください。";
+                initialInfo.style.display = 'block';
+                chatContainer.style.display = 'none';
+                chatInputWrapper.style.display = 'none';
+            }
+        }
+
+        // ----------------------------------------------------
+        // ファイル処理・Markdown・API通信
+        // ----------------------------------------------------
+        // ====================================================
+        // 【改善A】送信前の画像圧縮（長辺1600pxへ縮小＋JPEG再エンコード）
+        // 【改善C】画像を送るのは「今回のターン」だけ（過去画像の再送を停止）
+        // ====================================================
+        const IMAGE_MAX_SIDE = 1600;                 // 縮小後の長辺(px)
+        const IMAGE_JPEG_QUALITY = 0.82;             // JPEG品質
+        const IMAGE_MAX_BYTES = 3.5 * 1024 * 1024;   // これを超えたら品質を段階的に下げる
+        const SEND_IMAGE_ONLY_IN_LATEST_TURN = true; // falseにすると従来どおり毎回すべての画像を送信します
+
+        // 画像ファイルを<img>経由で読み込む（EXIFの回転を保ったまま描画するため）
+        function loadImageFromFile(file) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    resolve(img);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error("画像を読み込めませんでした。対応していない形式（HEICなど）か、ファイルが壊れている可能性があります。"));
+                };
+                img.src = url;
+            });
+        }
+
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result));
+                reader.onerror = () => reject(new Error("画像データの変換に失敗しました。"));
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        // 画像を縮小・再エンコードしてからBase64化する（送信量とメモリを大幅に削減）
+        async function shrinkImage(file) {
+            if (!file) return null;
+            if (!/^image\//.test(file.type || "")) {
+                throw new Error("画像ファイル（PNG / JPEG）を選択してください。");
+            }
+
+            const img = await loadImageFromFile(file);
+            const srcW = img.naturalWidth || img.width;
+            const srcH = img.naturalHeight || img.height;
+            if (!srcW || !srcH) {
+                throw new Error("画像サイズを取得できませんでした。別の画像でお試しください。");
+            }
+
+            const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(srcW, srcH));
+            const width = Math.max(1, Math.round(srcW * scale));
+            const height = Math.max(1, Math.round(srcH * scale));
+
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#ffffff";   // 透過PNGをJPEG化したときの黒潰れを防ぐ
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+
+            let blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    (b) => (b ? resolve(b) : reject(new Error("画像の変換に失敗しました。"))),
+                    "image/jpeg",
+                    IMAGE_JPEG_QUALITY
+                );
+            });
+
+            for (const quality of [0.7, 0.6, 0.5]) {
+                if (blob.size <= IMAGE_MAX_BYTES) break;
+                blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+            }
+
+            const dataUrl = await blobToDataUrl(blob);
+
+            return {
+                base64: dataUrl.split(",")[1],
+                mimeType: "image/jpeg",
+                dataUrl: dataUrl,
+                width: width,
+                height: height,
+                bytes: blob.size,
+                originalBytes: file.size
+            };
+        }
+
+        // 過去ターンの画像(inlineData)を取り除き、直近のターンの画像だけを送る
+        function sanitizeContentsForSend(contents) {
+            const list = Array.isArray(contents) ? contents : [];
+            if (!SEND_IMAGE_ONLY_IN_LATEST_TURN || list.length === 0) return list;
+
+            const lastIndex = list.length - 1;
+            return list.map((content, index) => {
+                const parts = Array.isArray(content.parts) ? content.parts : [];
+                const hasInlineData = parts.some((p) => p && p.inlineData);
+                if (!hasInlineData || index === lastIndex) return content;
+
+                const strippedParts = parts.filter((p) => !(p && p.inlineData));
+                strippedParts.push({
+                    text: "（以前に添付された画像は通信量削減のため省略しました。ここまでの会話の内容から文脈を判断してください。）"
+                });
+
+                return { role: content.role, parts: strippedParts };
+            });
+        }
+
+        function renderMarkdownAndMath(text, containerElement, onComplete) {
+            containerElement.innerHTML = marked.parse(text);
+            typesetMath(containerElement, onComplete);
+        }
+
+        function appendMessageToUI(role, contentText, imageUrl = null, scrollToTop = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.innerText = role === 'user' ? '👤' : '✨';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            if (imageUrl) {
+                const img = document.createElement('img');
+                img.src = imageUrl;
+                img.className = 'attached-image';
+                contentDiv.appendChild(img);
+            }
+            
+            const textDiv = document.createElement('div');
+            
+            renderMarkdownAndMath(contentText, textDiv, () => {
+                if (scrollToTop) {
+                    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            });
+            
+            contentDiv.appendChild(textDiv);
+            msgDiv.appendChild(avatar);
+            msgDiv.appendChild(contentDiv);
+            chatContainer.appendChild(msgDiv);
+            
+            if (!scrollToTop) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            return msgDiv;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-box';
+            errorDiv.innerHTML = `<strong>⚠️ エラーが発生しました:</strong><br>${message}`;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // __ENGINE_START__
+        // ====================================================
+        // 【改善E】ストリーミング(SSE)受信
+        //  streamGenerateContent?alt=sse の "data: {...}" 行を逐次読み取り、
+        //  受け取った分だけ本文を組み立ててコールバックします。
+        //  ※ 自動リトライは行いません（1操作＝1リクエスト）
+        //  ※ 受信中の描画はMarkdownのみ。数式は受信完了時にまとめて描画します
+        //     （毎チャンクで数式を組むとスマホで極端に重くなるため）
+        // ====================================================
+        const USE_STREAMING = true;          // false にすると従来の一括受信(generateContent)に戻ります
+        const REQUEST_TIMEOUT_MS = 300000;   // 受信の制限時間（300秒＝5分）
+
+        // 受信中の本文描画（Markdownのみ。軽い）
+        function streamRenderText(element, text) {
+            if (!element) return;
+            // 描画は約120ms間隔に間引く（最終描画で全文が入るため取りこぼしは無い）
+            const now = Date.now();
+            if (now - (element.__streamLastAt || 0) < 120) return;
+            element.__streamLastAt = now;
+            if (window.marked && typeof marked.parse === "function") {
+                element.innerHTML = marked.parse(text);
+            } else {
+                element.textContent = text;
+            }
+        }
+
+        // 1つのSSEイベント(JSON)から差分テキストを取り出す
+        function extractDeltaText(json) {
+            if (!json || typeof json !== "object") return "";
+
+            // Interactions API（新しい形式）
+            if (json.event_type === "step.delta" && json.delta &&
+                json.delta.type === "text" && typeof json.delta.text === "string") {
+                return json.delta.text;
+            }
+
+            // generateContent / streamGenerateContent（従来形式）
+            const candidates = json.candidates;
+            if (Array.isArray(candidates) && candidates.length > 0) {
+                const content = candidates[0] && candidates[0].content;
+                const parts = content && content.parts;
+                if (Array.isArray(parts)) {
+                    let text = "";
+                    for (const part of parts) {
+                        if (part && typeof part.text === "string") text += part.text;
+                    }
+                    return text;
+                }
+            }
+            return "";
+        }
+
+        // 安全フィルタ等で途中終了していないかの確認
+        function extractBlockedReason(json) {
+            const candidates = json && json.candidates;
+            if (Array.isArray(candidates) && candidates.length > 0) {
+                const reason = candidates[0] && candidates[0].finishReason;
+                if (reason && reason !== "STOP" && reason !== "MAX_TOKENS") return reason;
+            }
+            return null;
+        }
+
+        // レスポンス本文を読み切り、差分ごとに onDelta を呼ぶ
+        async function readSseBody(response, onDelta) {
+            let sawSse = false;
+            let doneReading = false;
+            let buffer = "";
+            let rawAll = "";
+
+            const handleLine = (line) => {
+                const cleaned = line.replace(/\r$/, "").trim();
+                if (!cleaned || !cleaned.startsWith("data:")) return;
+
+                sawSse = true;
+                const payload = cleaned.slice(5).trim();
+                if (!payload) return;
+
+                if (payload === "[DONE]") {
+                    doneReading = true;
+                    return;
+                }
+
+                let json = null;
+                try {
+                    json = JSON.parse(payload);
+                } catch (e) {
+                    return;
+                }
+
+                if (json && json.error) {
+                    throw new Error(json.error.message || "ストリーミング中にAPIエラーが発生しました。");
+                }
+
+                const delta = extractDeltaText(json);
+                if (delta) onDelta(delta);
+
+                const blocked = extractBlockedReason(json);
+                if (blocked) {
+                    throw new Error("回答が途中で終了しました（理由: " + blocked + "）。問題文を変えるか、もう一度お試しください。");
+                }
+            };
+
+            // ReadableStream + TextDecoder
+            // （TextDecoderStreamはSafari 14.1未満で使えないため、こちらを使う）
+            if (response.body && typeof response.body.getReader === "function" && typeof TextDecoder === "function") {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                try {
+                    while (!doneReading) {
+                        const chunkInfo = await reader.read();
+                        if (chunkInfo.done) break;
+
+                        const chunk = decoder.decode(chunkInfo.value, { stream: true });
+                        rawAll += chunk;
+                        buffer += chunk;
+
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop();   // 未完了の行は次のチャンクへ持ち越す
+                        for (const line of lines) handleLine(line);
+                    }
+
+                    if (!doneReading) {
+                        const tail = decoder.decode();
+                        if (tail) { rawAll += tail; buffer += tail; }
+                        if (buffer.trim()) handleLine(buffer);
+                    }
+                } finally {
+                    try { reader.releaseLock(); } catch (e) {}
+                }
+            } else {
+                rawAll = await response.text();
+                for (const line of rawAll.split("\n")) handleLine(line);
+            }
+
+            // "data:" 行が1つも無かった場合は通常のJSON（またはJSON配列）として再解釈する
+            if (!sawSse && rawAll.trim()) {
+                let json = null;
+                try { json = JSON.parse(rawAll); } catch (e) { json = null; }
+                if (json) {
+                    const items = Array.isArray(json) ? json : [json];
+                    for (const item of items) {
+                        const delta = extractDeltaText(item);
+                        if (delta) onDelta(delta);
+                    }
+                }
+            }
+
+            return rawAll;
+        }
+
+        // APIエラーを分かりやすい日本語に変換する
+        function buildApiErrorMessage(status, errorMsg) {
+            if (status === 429) {
+                return "APIの利用制限に達しました。左側のメニューから「Geminiのモデル名」を下のものに変更するか、少し時間を置いてから再度お試しください。";
+            }
+            if (status === 503) {
+                return "現在このモデルはGoogle側で混み合っています（あなたの通信環境やこのアプリの不具合ではありません）。少し時間を置くか、左側のメニューで別のモデルに切り替えてお試しください。";
+            }
+            if (status === 500) {
+                return "Google側で一時的なエラーが発生しています。少し時間を置いてから再度お試しください。";
+            }
+            if (status === 400 && /API key not valid/i.test(errorMsg || "")) {
+                return "無効なAPIキーです。取得したキーが正しく貼り付けられているか確認してください。";
+            }
+            if (status === 404) {
+                return "選択中のモデルが見つかりません。左側のメニューから別のモデルを選んでください。（" + errorMsg + "）";
+            }
+            if (status === 413) {
+                return "送信データが大きすぎます。画像を小さくするか、枚数を減らしてください。";
+            }
+            return errorMsg;
+        }
+
+        async function readErrorMessage(response) {
+            try {
+                const raw = await response.text();
+                const parsed = raw ? JSON.parse(raw) : null;
+                return (parsed && parsed.error && parsed.error.message) || response.statusText;
+            } catch (e) {
+                return response.statusText;
+            }
+        }
+
+        // Gemini APIへ1回だけリクエストする（ストリーミング／一括を切り替え可能）
+        async function requestGemini(urlStream, urlPlain, body, onDelta) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+            try {
+                if (USE_STREAMING) {
+                    const response = await fetch(urlStream, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: body,
+                        signal: controller.signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(buildApiErrorMessage(response.status, await readErrorMessage(response)));
+                    }
+
+                    let received = "";
+                    await readSseBody(response, (delta) => {
+                        received += delta;
+                        onDelta(received);
+                    });
+
+                    if (!received.trim()) {
+                        throw new Error("予期せぬレスポンス形式です。もう1度「この問題を解説させる」ボタンを押してみてください。");
+                    }
+                    return received;
+                }
+
+                // 従来の一括受信
+                const response = await fetch(urlPlain, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: body,
+                    signal: controller.signal
+                });
+
+                let rawText = "";
+                try { rawText = await response.text(); } catch (e) {}
+                let data = {};
+                try { data = rawText ? JSON.parse(rawText) : {}; } catch (e) {}
+
+                if (!response.ok) {
+                    throw new Error(buildApiErrorMessage(response.status, (data.error && data.error.message) || response.statusText));
+                }
+
+                const text = extractDeltaText(data);
+                if (!text) {
+                    throw new Error("予期せぬレスポンス形式です。もう1度「この問題を解説させる」ボタンを押してみてください。");
+                }
+                onDelta(text);
+                return text;
+
+            } catch (error) {
+                if (error.name === "AbortError") {
+                    throw new Error(Math.round(REQUEST_TIMEOUT_MS / 1000) + "秒の制限時間を超えたため、処理をタイムアウト中断しました。");
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        // 既存のローディング表示(el)を、受信した本文を順次描画する表示に切り替える
+        function startStreamingDisplay(el) {
+            let textDiv = null;
+            return {
+                el: el,
+                setText: (text) => {
+                    if (!textDiv || !textDiv.parentNode) {
+                        const content = el.querySelector(".message-content") || el;
+                        content.innerHTML = "";
+                        textDiv = document.createElement("div");
+                        content.appendChild(textDiv);
+                    }
+                    streamRenderText(textDiv, text);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            };
+        }
+        // MathJaxの読み込みを待ってから数式を描画する
+        // （読み込み前に呼ぶと、何も描画されないまま終わってしまうため）
+        function typesetMath(element, onComplete) {
+            const done = () => { if (typeof onComplete === "function") onComplete(); };
+            if (!element) { done(); return; }
+
+            const run = () => {
+                if (!window.MathJax || typeof MathJax.typesetPromise !== "function") { done(); return; }
+                MathJax.typesetPromise([element]).then(done).catch((err) => {
+                    console.warn("数式の描画に失敗しました:", err && err.message ? err.message : err);
+                    done();
+                });
+            };
+
+            if (window.MathJax && MathJax.startup && MathJax.startup.promise) {
+                MathJax.startup.promise.then(run).catch(run);
+            } else {
+                run();
+            }
+        }
+
+        // __ENGINE_END__
+
+        // ----------------------------------------------------
+        // ストリーミング通信対応のGemini API呼び出し
+        // ----------------------------------------------------
+        async function callGeminiAPIStream(onChunk) {
+            const apiKey = apiKeyInput.value.trim();
+            const model = modelSelect.value;
+            // SSE (Server-Sent Events) を受け取るための streamGenerateContent エンドポイント
+            const urlStream = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+            const urlPlain = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            // 【改善C】過去ターンの画像は送らず、今回の画像だけを送る
+            const payload = {
+                systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+                contents: sanitizeContentsForSend(chatHistory),
+                generationConfig: { temperature: 0.2 }
+            };
+
+            return await requestGemini(urlStream, urlPlain, JSON.stringify(payload), onChunk);
+        }
+
+        // ----------------------------------------------------
+        // 新しい問題を解く (フォーム送信)
+        // ----------------------------------------------------
+        newProblemForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert("APIキーを入力してください。");
+                return;
+            }
+            
+            saveApiKeyToLocal(apiKey);
+
+            const textInput = problemTextInput.value.trim();
+            const fileInput = problemImageInput.files[0];
+
+            if (!textInput && !fileInput) {
+                alert("問題のテキストか画像を入力してください。");
+                return;
+            }
+
+            if (window.innerWidth <= 768) {
+                closeSidebar();
+            }
+
+            chatHistory = [];
+            chatContainer.innerHTML = '';
+            statusArea.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            chatInputWrapper.style.display = 'block';
+            chatInput.disabled = true;
+            chatSendBtn.disabled = true;
+
+            let initialPromptText = "以下の問題を指示通りの手順で解説してください。\n\n";
+            if (textInput) {
+                initialPromptText += `【テキスト・指示】\n${textInput}\n`;
+            }
+            if (fileInput) {
+                initialPromptText += "【画像】\n添付した画像の問題を解いてください。";
+            }
+
+            let parts = [{ text: initialPromptText }];
+            let displayImageUrl = null;
+
+            try {
+                if (fileInput) {
+                    // 【改善A】アップロード時に縮小・再エンコードしてから送る
+                    const fileData = await shrinkImage(fileInput);
+                    console.info("画像を圧縮しました: " + Math.round(fileData.originalBytes / 1024) + "KB → " + Math.round(fileData.bytes / 1024) + "KB (" + fileData.width + "x" + fileData.height + ")");
+                    parts.push({
+                        inlineData: {
+                            data: fileData.base64,
+                            mimeType: fileData.mimeType
+                        }
+                    });
+                    displayImageUrl = fileData.dataUrl;
+                }
+
+                chatHistory.push({ role: "user", parts: parts });
+                appendMessageToUI('user', initialPromptText, displayImageUrl, false);
+
+                // UI用メッセージ枠の準備
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'message assistant';
+                msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> AIが思考中...</div></div>`;
+                chatContainer.appendChild(msgDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                const textDiv = msgDiv.querySelector('.message-content > div');
+
+                // 描画が重くならないよう更新をデバウンス制御
+                let renderTimer = null;
+                const updateStreamUI = (currentText) => {
+                    if (renderTimer) clearTimeout(renderTimer);
+                    renderTimer = setTimeout(() => {
+                        streamRenderText(textDiv, currentText);
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }, 100);
+                };
+
+                const responseText = await callGeminiAPIStream(updateStreamUI);
+
+                // ストリーミング完了後の最終描画
+                if (renderTimer) clearTimeout(renderTimer);
+                renderMarkdownAndMath(responseText, textDiv, () => {
+                    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+
+                problemTextInput.value = '';
+                problemImageInput.value = '';
+
+            } catch (error) {
+                if (chatContainer.lastChild && chatContainer.lastChild.classList.contains("assistant")) {
+                    chatContainer.removeChild(chatContainer.lastChild);
+                }
+                showError(error.message);
+                chatHistory.pop();
+            } finally {
+                chatInput.disabled = false;
+                chatSendBtn.disabled = false;
+                chatInput.focus();
+            }
+        });
+
+        // ----------------------------------------------------
+        // チャット入力 (フォーム送信)
+        // ----------------------------------------------------
+        chatInputForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const prompt = chatInput.value.trim();
+            if (!prompt) return;
+
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            chatInput.disabled = true;
+            chatSendBtn.disabled = true;
+
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            appendMessageToUI('user', prompt, null, false);
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message assistant';
+            msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> 思考中...</div></div>`;
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            const textDiv = msgDiv.querySelector('.message-content > div');
+
+            let renderTimer = null;
+            const updateStreamUI = (currentText) => {
+                if (renderTimer) clearTimeout(renderTimer);
+                renderTimer = setTimeout(() => {
+                    streamRenderText(textDiv, currentText);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }, 100);
+            };
+
+            try {
+                const responseText = await callGeminiAPIStream(updateStreamUI);
+
+                if (renderTimer) clearTimeout(renderTimer);
+                renderMarkdownAndMath(responseText, textDiv, () => {
+                    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+            } catch (error) {
+                if (chatContainer.lastChild && chatContainer.lastChild.classList.contains("assistant")) {
+                    chatContainer.removeChild(chatContainer.lastChild);
+                }
+                showError(error.message);
+                chatHistory.pop();
+            } finally {
+                chatInput.disabled = false;
+                chatSendBtn.disabled = false;
+                chatInput.focus();
+            }
+        });
+    </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","spa":2}' crossorigin="anonymous"></script>
+</body>
+</html>
