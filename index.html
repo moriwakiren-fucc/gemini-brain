@@ -22,6 +22,8 @@
         };
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
     <style>
         :root {
@@ -205,6 +207,91 @@
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
+            gap: 16px;
+        }
+
+        .header-title {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .download-area {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .download-btn {
+            width: auto;
+            white-space: nowrap;
+            padding: 9px 14px;
+            font-size: 0.9rem;
+        }
+
+        .download-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            border-color: var(--border-color);
+            color: #888;
+        }
+
+        .download-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            z-index: 1200;
+            width: 180px;
+            padding: 8px;
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 5px 18px rgba(0,0,0,0.15);
+        }
+
+        .download-menu.open { display: block; }
+        .download-menu button { margin: 3px 0; font-size: 0.9rem; }
+
+        .export-sheet {
+            position: fixed;
+            left: -100000px;
+            top: 0;
+            width: 794px;
+            padding: 56px;
+            background: #fff;
+            color: #111;
+            font-family: 'Segoe UI', Meiryo, system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+        }
+
+        .export-sheet h1 {
+            margin: 0 0 24px;
+            font-size: 24px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .export-question {
+            white-space: pre-wrap;
+            margin: 0 0 24px;
+            padding: 14px;
+            background: #f5f7fa;
+            border-left: 4px solid #4285f4;
+        }
+
+        .export-image {
+            display: block;
+            max-width: 100%;
+            max-height: 520px;
+            object-fit: contain;
+            margin: 0 auto 24px;
+        }
+
+        .export-answer { overflow-wrap: anywhere; }
+
+        @media (max-width: 768px) {
+            .header { padding-left: 20px; padding-right: 20px; gap: 8px; }
+            .download-btn { padding: 8px 10px; font-size: 0.78rem; }
+            .header-title h1 { font-size: 1.4rem; }
         }
 
         .menu-btn {
@@ -502,9 +589,16 @@
     <div class="main">
         <div class="header">
             <button class="menu-btn" id="menu-btn">☰</button>
-            <div>
+            <div class="header-title">
                 <h1>📐 Geminiの脳みそを借りるサイト (理系数学版)</h1>
                 <p>文系数学版は<a href="bunkei.html">こちら</a><br>数学以外（普通のGemini）は<a href="gemini_chat.html">こちら</a></p>
+            </div>
+            <div class="download-area" id="download-area">
+                <button type="button" id="download-answer-btn" class="download-btn" disabled>回答ダウンロード</button>
+                <div id="download-menu" class="download-menu" role="menu">
+                    <button type="button" id="download-pdf-btn">PDFでダウンロード</button>
+                    <button type="button" id="download-image-btn">画像でダウンロード</button>
+                </div>
             </div>
         </div>
 
@@ -558,7 +652,18 @@
 - 「解法の必然性」は、別の問題を解くときに再現性があるように、丁寧に詳しく書いてください。
 `;
 
-        let chatHistory = []; 
+        let chatHistory = [];
+        const CHAT_STORAGE_KEY = 'gemmath_chat_history_v1';
+        let activeRequest = null;
+        let lastCompletedAnswer = '';
+        let lastProblemImageUrl = null;
+        let lastProblemQuestion = '';
+        let lastRenderedAnswerElement = null;
+
+        const downloadAnswerBtn = document.getElementById('download-answer-btn');
+        const downloadMenu = document.getElementById('download-menu');
+        const downloadPdfBtn = document.getElementById('download-pdf-btn');
+        const downloadImageBtn = document.getElementById('download-image-btn');
 
         const sidebar = document.getElementById('sidebar');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
@@ -603,7 +708,68 @@
         // ----------------------------------------------------
         // APIキー管理ロジック
         // ----------------------------------------------------
-        window.onload = () => {
+        function saveChatHistory() {
+            try {
+                // 画像のinlineDataは大きくなりやすく、sessionStorageの容量を圧迫するため保存しない。
+                const storableHistory = chatHistory.map((content) => ({
+                    role: content.role,
+                    parts: (Array.isArray(content.parts) ? content.parts : [])
+                        .filter((part) => !(part && part.inlineData))
+                        .map((part) => ({ text: typeof part.text === 'string' ? part.text : '' }))
+                        .filter((part) => part.text !== '')
+                })).filter((content) => content.parts.length > 0);
+                sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(storableHistory));
+            } catch (error) {
+                console.warn('会話履歴の保存に失敗しました:', error);
+            }
+        }
+
+        function loadChatHistory() {
+            try {
+                const saved = sessionStorage.getItem(CHAT_STORAGE_KEY);
+                const parsed = saved ? JSON.parse(saved) : [];
+                if (!Array.isArray(parsed)) return [];
+                return parsed.filter((content) =>
+                    content && (content.role === 'user' || content.role === 'model') &&
+                    Array.isArray(content.parts) && content.parts.some((part) => part && typeof part.text === 'string')
+                ).map((content) => ({
+                    role: content.role,
+                    parts: content.parts
+                        .filter((part) => part && typeof part.text === 'string')
+                        .map((part) => ({ text: part.text }))
+                }));
+            } catch (error) {
+                console.warn('会話履歴の読み込みに失敗しました:', error);
+                return [];
+            }
+        }
+
+        function getTextFromParts(parts) {
+            return (Array.isArray(parts) ? parts : [])
+                .filter((part) => part && typeof part.text === 'string')
+                .map((part) => part.text)
+                .join('');
+        }
+
+        function restoreChatHistoryToUI() {
+            if (chatHistory.length === 0) return;
+
+            statusArea.style.display = 'none';
+            chatContainer.innerHTML = '';
+            chatContainer.style.display = 'flex';
+            chatInputWrapper.style.display = 'block';
+
+            for (const content of chatHistory) {
+                const text = getTextFromParts(content.parts);
+                if (text) appendMessageToUI(content.role === 'model' ? 'assistant' : 'user', text, null, false);
+            }
+
+            chatInput.disabled = false;
+            chatSendBtn.disabled = false;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        window.addEventListener('load', () => {
             const oldKey = localStorage.getItem('gemini_api_key');
             if (oldKey) {
                 saveApiKeyToLocal(oldKey);
@@ -615,9 +781,18 @@
             const keys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
             if (keys.length > 0) {
                 apiKeyInput.value = keys[keys.length - 1];
-                checkInitialState();
             }
-        };
+
+            // 再読み込み後は、以前の回答を画面・会話履歴へ復元しない。
+            chatHistory = [];
+            lastCompletedAnswer = '';
+            lastProblemImageUrl = null;
+            lastProblemQuestion = '';
+            lastRenderedAnswerElement = null;
+            sessionStorage.removeItem(CHAT_STORAGE_KEY);
+            downloadAnswerBtn.disabled = true;
+            checkInitialState();
+        });
 
         function saveApiKeyToLocal(keyToSave) {
             if (!keyToSave) return;
@@ -679,6 +854,11 @@
                 initialInfo.style.display = 'block';
                 chatContainer.style.display = 'none';
                 chatInputWrapper.style.display = 'none';
+            } else {
+                initialInfo.style.display = 'none';
+                chatContainer.style.display = 'flex';
+                chatInputWrapper.style.display = 'block';
+                if (!chatContainer.children.length) restoreChatHistoryToUI();
             }
         }
 
@@ -792,9 +972,131 @@
             });
         }
 
+        function extractMathTokens(text) {
+            const tokens = [];
+            const protectedText = String(text || '').replace(
+                /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\$)\$(?!\$)[^\n$]+?(?<!\\)\$(?!\$)/g,
+                (match) => {
+                    const index = tokens.length;
+                    tokens.push(match);
+                    return `MATH_TOKEN_${index}_END`;
+                }
+            );
+            return { protectedText, tokens };
+        }
+
+        function repairCommonLeftRightDelimiter(latex) {
+            let repaired = latex;
+            const leftCount = (repaired.match(/\\left\b/g) || []).length;
+            const rightCount = (repaired.match(/\\right\b/g) || []).length;
+
+            // 対応数が合わない場合はサイズ指定だけを外す。
+            // 不足した \right を末尾へ追加すると、別の区切りエラーを誘発するため追加しない。
+            if (leftCount !== rightCount) {
+                repaired = repaired.replace(/\\left\b|\\right\b/g, '');
+            }
+
+            // \left / \right の直後に有効な区切り文字がない場合も指定を外す。
+            repaired = repaired
+                .replace(/\\left(?!\s*[()[\]{}|.])/g, '')
+                .replace(/\\right(?!\s*[()[\]{}|.])/g, '');
+
+            // AIが閉じ忘れ・閉じ過ぎを出した場合は、描画できる範囲を保つ。
+            const openBraces = (repaired.match(/(?<!\\)\{/g) || []).length;
+            const closeBraces = (repaired.match(/(?<!\\)\}/g) || []).length;
+            if (openBraces > closeBraces) {
+                const missing = '}'.repeat(openBraces - closeBraces);
+                const closingDelimiter = repaired.match(/(\\\]|\\\)|\$\$|\$)$/);
+                if (closingDelimiter) {
+                    const index = repaired.lastIndexOf(closingDelimiter[0]);
+                    repaired = repaired.slice(0, index) + missing + repaired.slice(index);
+                } else {
+                    repaired += missing;
+                }
+            } else if (closeBraces > openBraces) {
+                let extra = closeBraces - openBraces;
+                repaired = repaired.replace(/(?<!\\)\}/g, (match) => {
+                    if (extra <= 0) return match;
+                    extra -= 1;
+                    return '';
+                });
+            }
+            return repaired;
+        }
+
+        function restoreMathTokens(element, tokens) {
+            if (!tokens.length) return [];
+            const fragments = [];
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+            const textNodes = [];
+            while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+            for (const node of textNodes) {
+                let value = node.nodeValue;
+                if (!value || !value.includes('MATH_TOKEN_')) continue;
+                const parent = node.parentElement;
+                if (parent && /^(CODE|PRE)$/.test(parent.tagName)) continue;
+
+                const parts = value.split(/(MATH_TOKEN_\d+_END)/g);
+                if (parts.length === 1) continue;
+                const replacement = document.createDocumentFragment();
+                for (const part of parts) {
+                    const match = part.match(/^MATH_TOKEN_(\d+)_END$/);
+                    if (!match) {
+                        if (part) replacement.appendChild(document.createTextNode(part));
+                        continue;
+                    }
+                    const index = Number(match[1]);
+                    const source = tokens[index];
+                    const isDisplay = source.startsWith('$$') || source.startsWith('\\[');
+                    const fragment = document.createElement(isDisplay ? 'div' : 'span');
+                    fragment.className = 'math-fragment';
+                    fragment.dataset.mathIndex = String(index);
+                    fragment.textContent = repairCommonLeftRightDelimiter(source);
+                    replacement.appendChild(fragment);
+                    fragments.push(fragment);
+                }
+                node.parentNode.replaceChild(replacement, node);
+            }
+            return fragments;
+        }
+
+        async function typesetMathFragments(element, onComplete) {
+            const done = () => { if (typeof onComplete === 'function') onComplete(); };
+            if (!element || !window.MathJax || typeof MathJax.typesetPromise !== 'function') {
+                done();
+                return;
+            }
+            try {
+                if (MathJax.startup && MathJax.startup.promise) await MathJax.startup.promise;
+                const fragments = [...element.querySelectorAll('.math-fragment')];
+                for (const fragment of fragments) {
+                    try {
+                        await MathJax.typesetPromise([fragment]);
+                    } catch (error) {
+                        // 壊れた数式だけを元のLaTeX文字列のまま残し、他の数式は描画する。
+                        console.warn('数式の一部を描画できませんでした:', error && error.message ? error.message : error);
+                        const index = Number(fragment.dataset.mathIndex);
+                        fragment.replaceWith(document.createTextNode(index >= 0 ? fragment.textContent : ''));
+                    }
+                }
+            } catch (error) {
+                console.warn('数式描画の準備に失敗しました:', error && error.message ? error.message : error);
+            } finally {
+                done();
+            }
+        }
+
         function renderMarkdownAndMath(text, containerElement, onComplete) {
-            containerElement.innerHTML = marked.parse(text);
-            typesetMath(containerElement, onComplete);
+            if (typeof streamMathTimer !== 'undefined') clearTimeout(streamMathTimer);
+            if (typeof streamMathGeneration === 'number') streamMathGeneration++;
+            if (window.MathJax && typeof MathJax.typesetClear === 'function') {
+                try { MathJax.typesetClear([containerElement]); } catch (error) { /* 描画前なので無視 */ }
+            }
+            const extracted = extractMathTokens(text);
+            containerElement.innerHTML = marked.parse(extracted.protectedText);
+            restoreMathTokens(containerElement, extracted.tokens);
+            typesetMathFragments(containerElement, onComplete);
         }
 
         function appendMessageToUI(role, contentText, imageUrl = null, scrollToTop = false) {
@@ -857,18 +1159,30 @@
         const USE_STREAMING = true;          // false にすると従来の一括受信(generateContent)に戻ります
         const REQUEST_TIMEOUT_MS = 300000;   // 受信の制限時間（300秒＝5分）
 
-        // 受信中の本文描画（Markdownのみ。軽い）
-        function streamRenderText(element, text) {
+        // 受信中の本文描画。Markdownを先に表示し、数式の区切りが閉じた時だけMathJaxを実行する。
+        function hasCompleteMathDelimiter(text) {
+            const inlineOpen = (text.match(/\\\(/g) || []).length;
+            const inlineClose = (text.match(/\\\)/g) || []).length;
+            const displayOpen = (text.match(/\\\[/g) || []).length;
+            const displayClose = (text.match(/\\\]/g) || []).length;
+            if (inlineOpen !== inlineClose || displayOpen !== displayClose) return false;
+            const doubleDollarCount = (text.match(/(?<!\\)\$\$/g) || []).length;
+            if (doubleDollarCount % 2 !== 0) return false;
+            const singleDollarText = text.replace(/(?<!\\)\$\$/g, '');
+            return ((singleDollarText.match(/(?<!\\)\$/g) || []).length % 2) === 0;
+        }
+
+        let streamMathTimer = null;
+        let streamMathGeneration = 0;
+
+        function renderStreamingMarkdownAndMath(element, text) {
             if (!element) return;
-            // 描画は約120ms間隔に間引く（最終描画で全文が入るため取りこぼしは無い）
-            const now = Date.now();
-            if (now - (element.__streamLastAt || 0) < 120) return;
-            element.__streamLastAt = now;
-            if (window.marked && typeof marked.parse === "function") {
-                element.innerHTML = marked.parse(text);
-            } else {
-                element.textContent = text;
-            }
+            clearTimeout(streamMathTimer);
+            const generation = ++streamMathGeneration;
+            streamMathTimer = setTimeout(() => {
+                if (generation !== streamMathGeneration) return;
+                renderMarkdownAndMath(text, element);
+            }, 300);
         }
 
         // 1つのSSEイベント(JSON)から差分テキストを取り出す
@@ -1031,6 +1345,7 @@
         // Gemini APIへ1回だけリクエストする（ストリーミング／一括を切り替え可能）
         async function requestGemini(urlStream, urlPlain, body, onDelta) {
             const controller = new AbortController();
+            activeRequest = controller;
             const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
             try {
@@ -1089,7 +1404,31 @@
                 throw error;
             } finally {
                 clearTimeout(timeoutId);
+                if (activeRequest === controller) activeRequest = null;
             }
+        }
+
+        function isTemporaryFetchError(error) {
+            const message = String(error && error.message || error);
+            return error instanceof TypeError ||
+                /failed to fetch/i.test(message) ||
+                /load failed/i.test(message) ||
+                /network(error)?/i.test(message);
+        }
+
+        async function callGeminiAPIStreamWithRetry(onChunk, onRetry) {
+            let lastError;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    return await callGeminiAPIStream(onChunk);
+                } catch (error) {
+                    lastError = error;
+                    if (attempt === 1 || !isTemporaryFetchError(error)) throw error;
+                    if (typeof onRetry === 'function') onRetry();
+                    await new Promise((resolve) => setTimeout(resolve, 1200));
+                }
+            }
+            throw lastError;
         }
 
         // 既存のローディング表示(el)を、受信した本文を順次描画する表示に切り替える
@@ -1104,8 +1443,8 @@
                         textDiv = document.createElement("div");
                         content.appendChild(textDiv);
                     }
-                    streamRenderText(textDiv, text);
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    renderStreamingMarkdownAndMath(textDiv, text);
+                    if (isChatNearBottom()) chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
             };
         }
@@ -1129,6 +1468,135 @@
                 run();
             }
         }
+
+        function isChatNearBottom(threshold = 80) {
+            return chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= threshold;
+        }
+
+        function updateProgress(messageElement, message) {
+            const progress = messageElement && messageElement.querySelector('.progress-text');
+            if (progress) progress.textContent = message;
+        }
+
+        function setDownloadReady(answer, imageUrl, questionText, renderedElement) {
+            lastCompletedAnswer = answer || '';
+            lastProblemImageUrl = imageUrl || null;
+            lastProblemQuestion = questionText || '';
+            lastRenderedAnswerElement = renderedElement || null;
+            downloadAnswerBtn.disabled = !lastCompletedAnswer.trim();
+        }
+
+        function closeDownloadMenu() {
+            downloadMenu.classList.remove('open');
+        }
+
+        async function buildExportCanvas() {
+            if (!lastCompletedAnswer.trim()) throw new Error('完全に出力された回答がありません。');
+            const sheet = document.createElement('div');
+            sheet.className = 'export-sheet';
+            sheet.innerHTML = '<h1>数学問題の解説</h1>';
+            if (lastProblemImageUrl) {
+                const image = document.createElement('img');
+                image.className = 'export-image';
+                image.src = lastProblemImageUrl;
+                sheet.appendChild(image);
+            }
+            if (lastProblemQuestion.trim()) {
+                const question = document.createElement('div');
+                question.className = 'export-question';
+                question.textContent = lastProblemQuestion;
+                sheet.appendChild(question);
+            }
+            const answer = lastRenderedAnswerElement
+                ? lastRenderedAnswerElement.cloneNode(true)
+                : document.createElement('div');
+            answer.classList.add('export-answer');
+            if (!lastRenderedAnswerElement) {
+                const extracted = extractMathTokens(lastCompletedAnswer);
+                answer.innerHTML = marked.parse(extracted.protectedText);
+                restoreMathTokens(answer, extracted.tokens);
+            }
+            sheet.appendChild(answer);
+            document.body.appendChild(sheet);
+            // 画面上ですでにMathJax描画済みのDOMをクローンするため、ここでは再typesetしない。
+            // 再typesetすると、描画済みの数式の上に別の数式が重なることがある。
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const canvas = await html2canvas(sheet, {
+                backgroundColor: '#ffffff',
+                scale: Math.min(2, window.devicePixelRatio || 1),
+                useCORS: true,
+                logging: false
+            });
+            sheet.remove();
+            return canvas;
+        }
+
+        async function shareOrDownloadBlob(blob, filename, mimeType) {
+            const file = new File([blob], filename, { type: mimeType });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({ files: [file], title: filename });
+                    return;
+                } catch (error) {
+                    if (error && error.name === 'AbortError') return;
+                }
+            }
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        async function downloadAnswerAsImage() {
+            const canvas = await buildExportCanvas();
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+            if (!blob) throw new Error('画像の作成に失敗しました。');
+            await shareOrDownloadBlob(blob, 'gemmath-answer.png', 'image/png');
+        }
+
+        async function downloadAnswerAsPdf() {
+            const canvas = await buildExportCanvas();
+            const jsPDF = window.jspdf && window.jspdf.jsPDF;
+            if (!jsPDF) throw new Error('PDF作成ライブラリを読み込めませんでした。');
+            const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+            const margin = 10;
+            const pageWidth = 210;
+            const pageHeight = 297;
+            const imageWidth = pageWidth - margin * 2;
+            const imageHeight = canvas.height * imageWidth / canvas.width;
+            let heightLeft = imageHeight;
+            let position = margin;
+            const imageData = canvas.toDataURL('image/png');
+            pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST');
+            heightLeft -= pageHeight - margin * 2;
+            while (heightLeft > 0) {
+                position = margin - (imageHeight - heightLeft);
+                pdf.addPage();
+                pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST');
+                heightLeft -= pageHeight - margin * 2;
+            }
+            const blob = pdf.output('blob');
+            await shareOrDownloadBlob(blob, 'gemmath-answer.pdf', 'application/pdf');
+        }
+
+        downloadAnswerBtn.addEventListener('click', () => {
+            if (!downloadAnswerBtn.disabled) downloadMenu.classList.toggle('open');
+        });
+        downloadPdfBtn.addEventListener('click', async () => {
+            closeDownloadMenu();
+            try { await downloadAnswerAsPdf(); } catch (error) { showError(error.message || 'PDFの作成に失敗しました。'); }
+        });
+        downloadImageBtn.addEventListener('click', async () => {
+            closeDownloadMenu();
+            try { await downloadAnswerAsImage(); } catch (error) { showError(error.message || '画像の作成に失敗しました。'); }
+        });
+        document.addEventListener('click', (event) => {
+            if (!document.getElementById('download-area').contains(event.target)) closeDownloadMenu();
+        });
 
         // __ENGINE_END__
 
@@ -1178,6 +1646,13 @@
             }
 
             chatHistory = [];
+            saveChatHistory();
+            lastCompletedAnswer = '';
+            lastProblemImageUrl = null;
+            lastProblemQuestion = textInput;
+            lastRenderedAnswerElement = null;
+            downloadAnswerBtn.disabled = true;
+            closeDownloadMenu();
             chatContainer.innerHTML = '';
             statusArea.style.display = 'none';
             chatContainer.style.display = 'flex';
@@ -1211,14 +1686,16 @@
                 }
 
                 chatHistory.push({ role: "user", parts: parts });
+                saveChatHistory();
                 appendMessageToUI('user', initialPromptText, displayImageUrl, false);
 
                 // UI用メッセージ枠の準備
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message assistant';
-                msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> AIが思考中...</div></div>`;
+                msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> <span class="progress-text">問題文を確認しています...</span></div></div>`;
                 chatContainer.appendChild(msgDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
+                updateProgress(msgDiv, fileInput ? 'Gemini APIへ送信する内容を準備しています...' : '問題文を確認しています...');
 
                 const textDiv = msgDiv.querySelector('.message-content > div');
 
@@ -1227,20 +1704,31 @@
                 const updateStreamUI = (currentText) => {
                     if (renderTimer) clearTimeout(renderTimer);
                     renderTimer = setTimeout(() => {
-                        streamRenderText(textDiv, currentText);
-                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                        const keepAtBottom = isChatNearBottom();
+                        renderStreamingMarkdownAndMath(textDiv, currentText);
+                        if (keepAtBottom) chatContainer.scrollTop = chatContainer.scrollHeight;
                     }, 100);
                 };
 
-                const responseText = await callGeminiAPIStream(updateStreamUI);
+                updateProgress(msgDiv, 'Gemini APIに接続しています...');
+                const responseText = await callGeminiAPIStreamWithRetry((currentText) => {
+                    updateProgress(msgDiv, '回答を生成しています...');
+                    updateStreamUI(currentText);
+                }, () => {
+                    if (renderTimer) clearTimeout(renderTimer);
+                    updateProgress(msgDiv, '通信を再接続しています...');
+                    textDiv.innerHTML = '<div class="spinner"></div> <span class="progress-text">通信を再接続しています...</span>';
+                });
 
                 // ストリーミング完了後の最終描画
                 if (renderTimer) clearTimeout(renderTimer);
                 renderMarkdownAndMath(responseText, textDiv, () => {
-                    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (isChatNearBottom()) chatContainer.scrollTop = chatContainer.scrollHeight;
+                    setDownloadReady(responseText, displayImageUrl, textInput, textDiv);
                 });
 
                 chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+                saveChatHistory();
 
                 problemTextInput.value = '';
                 problemImageInput.value = '';
@@ -1272,11 +1760,12 @@
             chatSendBtn.disabled = true;
 
             chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            saveChatHistory();
             appendMessageToUI('user', prompt, null, false);
 
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message assistant';
-            msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> 思考中...</div></div>`;
+            msgDiv.innerHTML = `<div class="avatar">✨</div><div class="message-content"><div><div class="spinner"></div> <span class="progress-text">追加質問を確認しています...</span></div></div>`;
             chatContainer.appendChild(msgDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -1286,20 +1775,31 @@
             const updateStreamUI = (currentText) => {
                 if (renderTimer) clearTimeout(renderTimer);
                 renderTimer = setTimeout(() => {
-                    streamRenderText(textDiv, currentText);
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    const keepAtBottom = isChatNearBottom();
+                    renderStreamingMarkdownAndMath(textDiv, currentText);
+                    if (keepAtBottom) chatContainer.scrollTop = chatContainer.scrollHeight;
                 }, 100);
             };
 
             try {
-                const responseText = await callGeminiAPIStream(updateStreamUI);
+                updateProgress(msgDiv, 'Gemini APIに接続しています...');
+                const responseText = await callGeminiAPIStreamWithRetry((currentText) => {
+                    updateProgress(msgDiv, '追加質問への回答を生成しています...');
+                    updateStreamUI(currentText);
+                }, () => {
+                    if (renderTimer) clearTimeout(renderTimer);
+                    updateProgress(msgDiv, '通信を再接続しています...');
+                    textDiv.innerHTML = '<div class="spinner"></div> <span class="progress-text">通信を再接続しています...</span>';
+                });
 
                 if (renderTimer) clearTimeout(renderTimer);
                 renderMarkdownAndMath(responseText, textDiv, () => {
-                    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (isChatNearBottom()) chatContainer.scrollTop = chatContainer.scrollHeight;
+                    setDownloadReady(responseText, lastProblemImageUrl, `${lastProblemQuestion}${lastProblemQuestion ? '\n\n' : ''}【追加質問】\n${prompt}`, textDiv);
                 });
 
                 chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+                saveChatHistory();
             } catch (error) {
                 if (chatContainer.lastChild && chatContainer.lastChild.classList.contains("assistant")) {
                     chatContainer.removeChild(chatContainer.lastChild);
