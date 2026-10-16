@@ -1826,11 +1826,11 @@
                 /network(error)?/i.test(message);
         }
 
-        async function callGeminiAPIStreamWithRetry(onChunk, onRetry) {
+        async function callGeminiAPIStreamWithRetry(urlStream, urlPlain, body, onChunk, onRetry) {
             let lastError;
             for (let attempt = 0; attempt < 2; attempt++) {
                 try {
-                    return await callGeminiAPIStream(onChunk);
+                    return await requestGemini(urlStream, urlPlain, body, onChunk);
                 } catch (error) {
                     lastError = error;
                     if (attempt === 1 || !isTemporaryFetchError(error)) throw error;
@@ -2125,14 +2125,19 @@
 
             try {
                 const model = modelSelect.value;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-                
-                const payload = buildApiPayload();
+                const urlPlain = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const urlStream = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+                const payload = JSON.stringify(buildApiPayload());
 
                 // 【改善E】受信した本文をローディング表示に順次描画する
-                const responseText = await callGeminiAPIStreamWithRetry((currentText) => {
-                    streamDisplay.setText(currentText);
-                });
+                const responseText = await callGeminiAPIStreamWithRetry(
+                    urlStream,
+                    urlPlain,
+                    payload,
+                    (currentText) => {
+                        streamDisplay.setText(currentText);
+                    }
+                );
 
                 if (loadingMsg.parentNode) chatContainer.removeChild(loadingMsg);
 
